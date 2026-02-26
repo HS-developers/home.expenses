@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>تطبيق مصروفاتي</title>
+    <title>تطبيق مصروفاتي - الإدارة الشهرية</title>
     
     <!-- PWA Primary Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & Libraries - Fixed Versioning for Recharts compatibility -->
+    <!-- React & Libraries -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
@@ -27,6 +27,14 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 10px; }
+        
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236366f1'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: left 0.75rem center;
+            background-size: 1.1em;
+        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -35,10 +43,9 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
         const { 
-            PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend 
+            PieChart, Pie, Cell, ResponsiveContainer, Tooltip 
         } = window.Recharts;
 
-        // Icons placeholder logic for Lucide
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
@@ -54,6 +61,11 @@
                 'جبن و البان', 'أخرى'
             ];
 
+            const getCurrentMonthStr = () => {
+                const now = new Date();
+                return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            };
+
             const [expenses, setExpenses] = useState(() => {
                 const saved = localStorage.getItem('expenses_v1');
                 return saved ? JSON.parse(saved) : [];
@@ -63,12 +75,52 @@
             const [newAmount, setNewAmount] = useState('');
             const [newCategory, setNewCategory] = useState(categories[0]);
             const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
+            
             const [filterCategory, setFilterCategory] = useState('الكل');
+            const [filterMonth, setFilterMonth] = useState(getCurrentMonthStr());
+            const [showExportReminder, setShowExportReminder] = useState(false);
 
             useEffect(() => {
                 localStorage.setItem('expenses_v1', JSON.stringify(expenses));
                 if (window.lucide) window.lucide.createIcons();
             }, [expenses]);
+
+            // Check for monthly export reminder
+            useEffect(() => {
+                const now = new Date();
+                const today = now.getDate();
+                
+                // If it's the 1st of the month
+                if (today === 1) {
+                    const lastMonthDate = new Date();
+                    lastMonthDate.setMonth(now.getMonth() - 1);
+                    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
+                    
+                    const alreadyExported = localStorage.getItem(`exported_${lastMonthKey}`);
+                    
+                    // Check if there are actually expenses for last month
+                    const hasLastMonthData = expenses.some(exp => exp.date.startsWith(lastMonthKey));
+                    
+                    if (!alreadyExported && hasLastMonthData) {
+                        setShowExportReminder(true);
+                    }
+                }
+            }, [expenses]);
+
+            const availableMonths = useMemo(() => {
+                const months = expenses.map(exp => exp.date.substring(0, 7));
+                const current = getCurrentMonthStr();
+                const allMonths = [...new Set([...months, current])];
+                return allMonths.sort().reverse();
+            }, [expenses]);
+
+            const formatMonthDisplay = (monthStr) => {
+                if (monthStr === 'الكل') return 'كافة الشهور';
+                const [year, month] = monthStr.split('-');
+                const date = new Date(year, parseInt(month) - 1);
+                const label = date.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+                return monthStr === getCurrentMonthStr() ? `${label} (الحالي)` : label;
+            };
 
             const handleAddExpense = (e) => {
                 e.preventDefault();
@@ -83,6 +135,7 @@
                 setExpenses([expense, ...expenses]);
                 setNewTitle('');
                 setNewAmount('');
+                setFilterMonth(newDate.substring(0, 7));
             };
 
             const deleteExpense = (id) => {
@@ -91,12 +144,66 @@
                 }
             };
 
+            const exportData = (targetMonth = 'all') => {
+                let dataToExport = expenses;
+                let fileName = `مصروفات_المنزل_كاملة_${new Date().toISOString().split('T')[0]}`;
+
+                if (targetMonth !== 'all') {
+                    dataToExport = expenses.filter(exp => exp.date.startsWith(targetMonth));
+                    fileName = `مصروفات_شهر_${targetMonth}`;
+                    // Mark as exported
+                    localStorage.setItem(`exported_${targetMonth}`, 'true');
+                    setShowExportReminder(false);
+                }
+
+                if (dataToExport.length === 0) {
+                    alert("لا توجد بيانات لتصديرها");
+                    return;
+                }
+
+                const headers = ["التاريخ", "الوصف", "القسم", "المبلغ (ج.م)"];
+                const rows = dataToExport.map(exp => [exp.date, exp.title, exp.category, exp.amount]);
+                const total = dataToExport.reduce((sum, exp) => sum + exp.amount, 0);
+                rows.push(["", "", "الإجمالي", total]);
+
+                const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `${fileName}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
             const filteredExpenses = useMemo(() => {
-                return expenses.filter(exp => filterCategory === 'الكل' || exp.category === filterCategory);
-            }, [expenses, filterCategory]);
+                return expenses.filter(exp => {
+                    const matchesCategory = filterCategory === 'الكل' || exp.category === filterCategory;
+                    const expMonth = exp.date.substring(0, 7);
+                    const matchesMonth = filterMonth === 'الكل' || expMonth === filterMonth;
+                    return matchesCategory && matchesMonth;
+                });
+            }, [expenses, filterCategory, filterMonth]);
 
             const totalAmount = useMemo(() => {
                 return filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+            }, [filteredExpenses]);
+
+            const highestExpense = useMemo(() => {
+                if (filteredExpenses.length === 0) return 0;
+                return Math.max(...filteredExpenses.map(e => e.amount));
+            }, [filteredExpenses]);
+
+            const topCategories = useMemo(() => {
+                const dataMap = {};
+                filteredExpenses.forEach(exp => {
+                    dataMap[exp.category] = (dataMap[exp.category] || 0) + exp.amount;
+                });
+                return Object.entries(dataMap)
+                    .map(([name, value]) => ({ name, value }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 3);
             }, [filteredExpenses]);
 
             const chartData = useMemo(() => {
@@ -113,90 +220,212 @@
                 <div className="min-h-screen p-4 md:p-8">
                     <div className="max-w-6xl mx-auto space-y-6">
                         
-                        {/* Header */}
-                        <header className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="md:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
-                                <div>
-                                    <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                                        <Icon name="wallet" className="text-indigo-600" size={32} />
-                                        ميزانية المنزل
-                                    </h1>
-                                    <p className="text-slate-500 font-bold mt-1">إدارة المصاريف الذكية</p>
+                        {/* Monthly Export Reminder Modal-like Banner */}
+                        {showExportReminder && (
+                            <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-3xl shadow-lg flex flex-col md:flex-row items-center justify-between gap-4 animate-bounce-short">
+                                <div className="flex items-center gap-4 text-center md:text-right">
+                                    <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                                        <Icon name="bell" size={24} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-amber-900 font-black">تذكير بأرشفة الشهر الماضي!</h3>
+                                        <p className="text-amber-700 text-sm font-bold">لقد بدأ شهر جديد، هل تود تصدير سجل الشهر السابق إلى ملف Excel؟</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => {
+                                            const lastMonthDate = new Date();
+                                            lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+                                            const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
+                                            exportData(lastMonthKey);
+                                        }}
+                                        className="bg-amber-600 text-white px-6 py-3 rounded-2xl font-black shadow-md hover:bg-amber-700 transition-all flex items-center gap-2"
+                                    >
+                                        <Icon name="file-down" size={20} />
+                                        تصدير الآن
+                                    </button>
+                                    <button 
+                                        onClick={() => setShowExportReminder(false)}
+                                        className="bg-white text-amber-600 border border-amber-200 px-4 py-3 rounded-2xl font-bold hover:bg-amber-100 transition-all"
+                                    >
+                                        لاحقاً
+                                    </button>
                                 </div>
                             </div>
-                            <div className="bg-indigo-600 p-6 rounded-3xl text-center text-white shadow-xl shadow-indigo-100 flex flex-col justify-center">
-                                <span className="text-xs font-bold opacity-80 uppercase">الإجمالي</span>
-                                <div className="text-3xl font-black">{totalAmount.toLocaleString()} <span className="text-sm">ج.م</span></div>
+                        )}
+
+                        <header className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                            <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                                <div className="flex items-center justify-between">
+                                    <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                                        <Icon name="layout-dashboard" className="text-indigo-600" size={28} />
+                                        ميزانية المنزل
+                                    </h1>
+                                    <button onClick={() => exportData('all')} className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:text-emerald-600 hover:bg-emerald-50 transition-all" title="تصدير الكل">
+                                        <Icon name="download" size={20} />
+                                    </button>
+                                </div>
+                                <div className="mt-4">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">الشهر المختار</p>
+                                    <p className="text-lg font-bold text-indigo-900 leading-tight">
+                                        {formatMonthDisplay(filterMonth)}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="lg:col-span-4 bg-indigo-600 p-6 rounded-3xl text-right text-white shadow-xl shadow-indigo-100 flex flex-col justify-center">
+                                <span className="text-[10px] font-black opacity-80 uppercase tracking-widest">إجمالي المصروفات</span>
+                                <div className="text-4xl font-black leading-none my-1">{totalAmount.toLocaleString()} <span className="text-lg font-normal">ج.م</span></div>
+                                <div className="mt-2 pt-2 border-t border-indigo-400/30 flex justify-between items-center">
+                                    <span className="text-[10px] font-bold">أعلى عملية منفردة:</span>
+                                    <span className="font-black text-sm">{highestExpense.toLocaleString()} ج.م</span>
+                                </div>
+                            </div>
+
+                            <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <h3 className="text-xs font-black text-slate-400 uppercase mb-3 flex items-center gap-2">
+                                    <Icon name="trending-up" size={14} className="text-pink-500" />
+                                    أعلى 3 فئات صرفاً
+                                </h3>
+                                <div className="space-y-3">
+                                    {topCategories.length > 0 ? topCategories.map((cat, idx) => (
+                                        <div key={cat.name} className="flex items-center justify-between group">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-5 h-5 flex items-center justify-center bg-slate-100 text-[10px] font-black rounded-full text-slate-500 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                                    {idx + 1}
+                                                </span>
+                                                <span className="text-sm font-bold text-slate-700">{cat.name}</span>
+                                            </div>
+                                            <div className="text-sm font-black text-indigo-600">{cat.value.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">ج.م</span></div>
+                                        </div>
+                                    )) : (
+                                        <div className="text-xs italic text-slate-300 py-2">لا توجد بيانات كافية</div>
+                                    )}
+                                </div>
                             </div>
                         </header>
 
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            
-                            {/* Form */}
                             <div className="lg:col-span-4">
                                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 sticky top-6">
-                                    <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                                        <Icon name="plus-circle" className="text-indigo-500" /> تسجيل جديد
+                                    <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-800">
+                                        <Icon name="plus-circle" className="text-indigo-500" /> إضافة بند
                                     </h2>
                                     <form onSubmit={handleAddExpense} className="space-y-4">
-                                        <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="اسم البند" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" required />
-                                        <input type="number" inputMode="decimal" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="المبلغ" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-black text-xl" required />
-                                        <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold">
-                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                        <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" />
-                                        <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-transform">إضافة للميزانية</button>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-slate-400 mr-2">وصف المصروف</label>
+                                            <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="مثلاً: خضار الأسبوع" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-all text-slate-800" required />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-slate-400 mr-2">المبلغ (ج.م)</label>
+                                            <input type="number" inputMode="decimal" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-black text-xl text-indigo-900" required />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-slate-400 mr-2">التصنيف</label>
+                                            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold appearance-none cursor-pointer text-slate-700">
+                                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-slate-400 mr-2">التاريخ</label>
+                                            <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700" />
+                                        </div>
+                                        <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all mt-2 hover:bg-indigo-700 shadow-indigo-200">حفظ العملية</button>
                                     </form>
                                 </div>
                             </div>
 
-                            {/* Data & Charts */}
                             <div className="lg:col-span-8 space-y-6">
-                                {/* Filters */}
-                                <div className="bg-white p-4 rounded-3xl flex flex-wrap gap-2 items-center border border-slate-100 shadow-sm">
-                                    <Icon name="filter" size={18} className="text-slate-400 ml-2" />
-                                    {['الكل', ...categories.slice(0, 5), '...'].map(cat => (
-                                        <button key={cat} onClick={() => cat !== '...' && setFilterCategory(cat)} className={`px-4 py-2 rounded-xl text-xs font-bold border ${filterCategory === cat ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border-slate-100'}`}>{cat}</button>
-                                    ))}
+                                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mr-1">تغيير الشهر المستعرض</label>
+                                        <select 
+                                            value={filterMonth} 
+                                            onChange={(e) => setFilterMonth(e.target.value)}
+                                            className="w-full p-3 pr-10 bg-pink-50 border border-pink-100 rounded-2xl outline-none font-bold text-pink-700 cursor-pointer"
+                                        >
+                                            <option value="الكل">كل السجل</option>
+                                            {availableMonths.map(month => (
+                                                <option key={month} value={month}>{formatMonthDisplay(month)}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mr-1">فلترة حسب التصنيف</label>
+                                        <select 
+                                            value={filterCategory} 
+                                            onChange={(e) => setFilterCategory(e.target.value)}
+                                            className="w-full p-3 pr-10 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-bold text-indigo-700 cursor-pointer"
+                                        >
+                                            <option value="الكل">جميع التصنيفات</option>
+                                            {categories.map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
 
-                                {/* Chart */}
                                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Icon name="pie-chart" className="text-pink-500" /> تحليل المصروفات</h2>
-                                    <div className="h-64">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={chartData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                                                    {chartData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                                </Pie>
-                                                <Tooltip />
-                                            </PieChart>
-                                        </ResponsiveContainer>
+                                    <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-800">
+                                        <Icon name="pie-chart" className="text-indigo-500" /> 
+                                        توزيع مصاريف الشهر
+                                    </h2>
+                                    <div className="h-64 w-full">
+                                        {chartData.length > 0 ? (
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie data={chartData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                                        {chartData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                                    </Pie>
+                                                    <Tooltip 
+                                                        contentStyle={{borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', textAlign: 'right'}}
+                                                        itemStyle={{fontWeight: 'bold'}}
+                                                    />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="h-full flex items-center justify-center text-slate-300 italic font-bold">لا توجد بيانات لهذا الشهر</div>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* List */}
                                 <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                                    <div className="p-6 bg-slate-50/50 border-b font-bold flex justify-between">
-                                        <span>سجل العمليات</span>
-                                        <span className="text-indigo-600">{filteredExpenses.length} بند</span>
+                                    <div className="p-6 bg-slate-50/50 border-b font-bold flex justify-between items-center text-slate-700">
+                                        <span>قائمة المصروفات المفلترة</span>
+                                        <Icon name="arrow-down-narrow-wide" size={18} />
                                     </div>
-                                    <div className="max-h-96 overflow-y-auto custom-scrollbar">
-                                        {filteredExpenses.map(exp => (
-                                            <div key={exp.id} className="p-4 flex justify-between items-center border-b last:border-0 hover:bg-slate-50">
-                                                <div className="flex gap-3 items-center">
-                                                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500"><Icon name="tag" size={18} /></div>
+                                    <div className="max-h-[500px] overflow-y-auto custom-scrollbar divide-y divide-slate-50">
+                                        {filteredExpenses.length > 0 ? filteredExpenses.map(exp => (
+                                            <div key={exp.id} className="p-5 flex justify-between items-center hover:bg-slate-50 transition-colors group">
+                                                <div className="flex gap-4 items-center">
+                                                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                                                        <Icon name="receipt" size={18} />
+                                                    </div>
                                                     <div>
                                                         <div className="font-bold text-slate-800">{exp.title}</div>
-                                                        <div className="text-[10px] text-slate-400 font-bold">{exp.date} | {exp.category}</div>
+                                                        <div className="text-[11px] text-slate-400 font-bold flex gap-2 mt-0.5">
+                                                            <span>{exp.date}</span>
+                                                            <span className="text-indigo-500 font-black">#{exp.category}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-4">
-                                                    <div className="text-lg font-black">{exp.amount} <span className="text-[10px]">ج.م</span></div>
-                                                    <button onClick={() => deleteExpense(exp.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={18} /></button>
+                                                    <div className="text-left">
+                                                        <div className="text-xl font-black text-slate-800">{exp.amount.toLocaleString()}</div>
+                                                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-left">جنية</div>
+                                                    </div>
+                                                    <button onClick={() => deleteExpense(exp.id)} className="p-2 text-slate-200 hover:text-red-500 transition-colors">
+                                                        <Icon name="x-circle" size={20} />
+                                                    </button>
                                                 </div>
                                             </div>
-                                        ))}
+                                        )) : (
+                                            <div className="p-20 text-center text-slate-300 font-bold italic">
+                                                السجل فارغ لهذا الاختيار
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
