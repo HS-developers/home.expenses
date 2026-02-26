@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>تطبيق مصروفاتي</title>
+    
+    <!-- PWA Primary Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#4f46e5">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & Libraries - Fixed Versioning for Recharts compatibility -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+        body { font-family: 'Cairo', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { 
+            PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend 
+        } = window.Recharts;
+
+        // Icons placeholder logic for Lucide
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, []);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+        };
+
+        const App = () => {
+            const categories = [
+                'خضار وفاكهه', 'فراخ', 'لحوم', 'علافة و توابل', 'مسحوق غسيل', 
+                'مناديل', 'منظفات ارضيات', 'معجون', 'زيت وسمن', 'مكرونة و رز', 
+                'صوصات وصلصة', 'شامبو وكريمات', 'عيش و فينو', 'مخبوزات', 
+                'جبن و البان', 'أخرى'
+            ];
+
+            const [expenses, setExpenses] = useState(() => {
+                const saved = localStorage.getItem('expenses_v1');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [newTitle, setNewTitle] = useState('');
+            const [newAmount, setNewAmount] = useState('');
+            const [newCategory, setNewCategory] = useState(categories[0]);
+            const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
+            const [filterCategory, setFilterCategory] = useState('الكل');
+
+            useEffect(() => {
+                localStorage.setItem('expenses_v1', JSON.stringify(expenses));
+                if (window.lucide) window.lucide.createIcons();
+            }, [expenses]);
+
+            const handleAddExpense = (e) => {
+                e.preventDefault();
+                if (!newTitle || !newAmount) return;
+                const expense = {
+                    id: Date.now(),
+                    title: newTitle,
+                    amount: parseFloat(newAmount),
+                    category: newCategory,
+                    date: newDate
+                };
+                setExpenses([expense, ...expenses]);
+                setNewTitle('');
+                setNewAmount('');
+            };
+
+            const deleteExpense = (id) => {
+                if(confirm('هل أنت متأكد من حذف هذا البند؟')) {
+                    setExpenses(expenses.filter(exp => exp.id !== id));
+                }
+            };
+
+            const filteredExpenses = useMemo(() => {
+                return expenses.filter(exp => filterCategory === 'الكل' || exp.category === filterCategory);
+            }, [expenses, filterCategory]);
+
+            const totalAmount = useMemo(() => {
+                return filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+            }, [filteredExpenses]);
+
+            const chartData = useMemo(() => {
+                const dataMap = {};
+                filteredExpenses.forEach(exp => {
+                    dataMap[exp.category] = (dataMap[exp.category] || 0) + exp.amount;
+                });
+                return Object.keys(dataMap).map(key => ({ name: key, value: dataMap[key] }));
+            }, [filteredExpenses]);
+
+            const COLORS = ['#6366F1', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+
+            return (
+                <div className="min-h-screen p-4 md:p-8">
+                    <div className="max-w-6xl mx-auto space-y-6">
+                        
+                        {/* Header */}
+                        <header className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                        <Icon name="wallet" className="text-indigo-600" size={32} />
+                                        ميزانية المنزل
+                                    </h1>
+                                    <p className="text-slate-500 font-bold mt-1">إدارة المصاريف الذكية</p>
+                                </div>
+                            </div>
+                            <div className="bg-indigo-600 p-6 rounded-3xl text-center text-white shadow-xl shadow-indigo-100 flex flex-col justify-center">
+                                <span className="text-xs font-bold opacity-80 uppercase">الإجمالي</span>
+                                <div className="text-3xl font-black">{totalAmount.toLocaleString()} <span className="text-sm">ج.م</span></div>
+                            </div>
+                        </header>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            
+                            {/* Form */}
+                            <div className="lg:col-span-4">
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 sticky top-6">
+                                    <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                                        <Icon name="plus-circle" className="text-indigo-500" /> تسجيل جديد
+                                    </h2>
+                                    <form onSubmit={handleAddExpense} className="space-y-4">
+                                        <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="اسم البند" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" required />
+                                        <input type="number" inputMode="decimal" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="المبلغ" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-black text-xl" required />
+                                        <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold">
+                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                        <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" />
+                                        <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-transform">إضافة للميزانية</button>
+                                    </form>
+                                </div>
+                            </div>
+
+                            {/* Data & Charts */}
+                            <div className="lg:col-span-8 space-y-6">
+                                {/* Filters */}
+                                <div className="bg-white p-4 rounded-3xl flex flex-wrap gap-2 items-center border border-slate-100 shadow-sm">
+                                    <Icon name="filter" size={18} className="text-slate-400 ml-2" />
+                                    {['الكل', ...categories.slice(0, 5), '...'].map(cat => (
+                                        <button key={cat} onClick={() => cat !== '...' && setFilterCategory(cat)} className={`px-4 py-2 rounded-xl text-xs font-bold border ${filterCategory === cat ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border-slate-100'}`}>{cat}</button>
+                                    ))}
+                                </div>
+
+                                {/* Chart */}
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Icon name="pie-chart" className="text-pink-500" /> تحليل المصروفات</h2>
+                                    <div className="h-64">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie data={chartData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                                    {chartData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* List */}
+                                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                                    <div className="p-6 bg-slate-50/50 border-b font-bold flex justify-between">
+                                        <span>سجل العمليات</span>
+                                        <span className="text-indigo-600">{filteredExpenses.length} بند</span>
+                                    </div>
+                                    <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                                        {filteredExpenses.map(exp => (
+                                            <div key={exp.id} className="p-4 flex justify-between items-center border-b last:border-0 hover:bg-slate-50">
+                                                <div className="flex gap-3 items-center">
+                                                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500"><Icon name="tag" size={18} /></div>
+                                                    <div>
+                                                        <div className="font-bold text-slate-800">{exp.title}</div>
+                                                        <div className="text-[10px] text-slate-400 font-bold">{exp.date} | {exp.category}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="text-lg font-black">{exp.amount} <span className="text-[10px]">ج.م</span></div>
+                                                    <button onClick={() => deleteExpense(exp.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={18} /></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
